@@ -29,7 +29,8 @@ export function generarReservas() {
           .find((m) => !lista.some((x) => seSolapan(x, { restauranteId: resto.id, mesaId: m.id, fecha, hora })))
         if (!mesa) continue
         const pasado = fecha < hoy
-        const estado = pasado ? (r() < 0.1 ? 'cancelada' : 'atendida') : r() < 0.6 ? 'confirmada' : 'pendiente'
+        const x = r()
+        const estado = pasado ? (x < 0.08 ? 'cancelada' : x < 0.15 ? 'no_asistio' : 'atendida') : r() < 0.6 ? 'confirmada' : 'pendiente'
         const nom = NOMBRES[Math.floor(r() * NOMBRES.length)]
         lista.push({
           id: `h${n++}`, restauranteId: resto.id, fecha, hora, mesaId: mesa.id, personas, estado,
@@ -39,6 +40,14 @@ export function generarReservas() {
         })
       }
     }
+  })
+  // Cliente de demostración con 2 inasistencias recientes: su DNI aparece bloqueado
+  ;[-12, -5].forEach((d) => {
+    const fecha = sumarDias(hoy, d)
+    const resto = RESTAURANTES[0]
+    const mesa = resto.mesas.find((m) => !lista.some((x) => seSolapan(x, { restauranteId: resto.id, mesaId: m.id, fecha, hora: '16:30' })))
+    if (mesa) lista.push({ id: `demo${d}`, restauranteId: resto.id, fecha, hora: '16:30', mesaId: mesa.id, personas: 2, estado: 'no_asistio',
+      dni: '45678912', nombres: 'Pedro', apellidos: 'Ramos Díaz', celular: '911222333', correo: 'pedro.ramos@correo.pe' })
   })
   return lista
 }

@@ -9,6 +9,7 @@ import RestauranteDetalle from './Components/RestauranteDetalle'
 import Reservar from './Components/Reservar'
 import Servicios from './Components/Servicios'
 import Contacto from './Components/Contacto'
+import MisReservas from './Components/MisReservas'
 import PanelAdmin from './Components/admin/PanelAdmin'
 import Toast from './Components/reserva/Toast'
 
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/reservar" element={<Reservar />} />
             <Route path="/servicios" element={<Servicios />} />
             <Route path="/contacto" element={<Contacto />} />
+            <Route path="/mis-reservas" element={<MisReservas />} />
             <Route path="/admin" element={<PanelAdmin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

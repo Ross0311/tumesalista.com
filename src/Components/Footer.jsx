@@ -17,6 +17,7 @@ export default function Footer() {
         <div>
           <h4>tumesalista.pe</h4>
           <Link to="/reservar">Reservar mesa</Link>
+          <Link to="/mis-reservas">Mis reservas</Link>
           <Link to="/servicios">Servicios para restaurantes</Link>
           <Link to="/contacto">Contacto</Link>
           <Link to="/admin">Acceso restaurantes</Link>

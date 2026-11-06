@@ -57,7 +57,15 @@ export default function AdminReportes({ resto }) {
     const grupos = [['1–2 personas', (p) => p <= 2], ['3–4 personas', (p) => p >= 3 && p <= 4], ['5 o más', (p) => p >= 5]]
       .map(([k, fn]) => ({ k, n: validas.filter((x) => fn(x.personas)).length }))
 
+    // Inasistencias: sobre las reservas cuya hora ya pasó (atendidas + no asistió)
+    const cerradas = lista.filter((x) => ['atendida', 'no_asistio'].includes(x.estado))
+    const tasa = (arr) => { const n = arr.filter((x) => x.estado === 'no_asistio').length; return arr.length ? Math.round((n / arr.length) * 100) : 0 }
+    const faltaDia = DIAS.map((k, i) => ({ k, n: tasa(cerradas.filter((x) => (new Date(x.fecha + 'T12:00').getDay() + 6) % 7 === i)) }))
+    const faltaHora = HORARIOS.filter((h) => h.endsWith(':00')).map((k) => ({ k, n: tasa(cerradas.filter((x) => x.hora.slice(0, 2) === k.slice(0, 2))) }))
+    const faltas = cerradas.filter((x) => x.estado === 'no_asistio').length
+
     return {
+      noShow: tasa(cerradas), faltas, faltaDia, faltaHora,
       total: validas.length, comensales: validas.reduce((s, x) => s + x.personas, 0),
       cancel: lista.length ? Math.round(((lista.length - validas.length) / lista.length) * 100) : 0,
       topFechas, porDia, porHora, meses, tipos, grupos,
@@ -83,7 +91,7 @@ export default function AdminReportes({ resto }) {
         <div className="kpi kpi--red"><span>Reservas</span><b>{r.total}</b></div>
         <div className="kpi kpi--blue"><span>Comensales</span><b>{r.comensales}</b></div>
         <div className="kpi kpi--yellow"><span>Promedio por mesa</span><b>{r.total ? (r.comensales / r.total).toFixed(1) : '—'}</b></div>
-        <div className="kpi kpi--choc"><span>Cancelación</span><b>{r.cancel}%</b></div>
+        <div className="kpi kpi--choc"><span>Cancelación · No asistió</span><b>{r.cancel}% · {r.noShow}%</b></div>
       </div>
 
       {r.total > 0 && (
@@ -117,6 +125,15 @@ export default function AdminReportes({ resto }) {
         </div>
         <div className="card"><h3 className="h3">Horas pico</h3><Barras datos={r.porHora} destacar={2} etiqueta={(d) => d.k.slice(0, 2) + 'h'} /></div>
         <div className="card"><h3 className="h3">Reservas por día de la semana</h3><Barras datos={r.porDia} destacar={2} /></div>
+        <div className="card rep-grid__full">
+          <div className="seccion__head"><h3 className="h3">Inasistencias (reservas falsas o no-show)</h3>
+            <span className="chip chip--sm chip--promo">{r.faltas} inasistencias · {r.noShow}% de las reservas</span></div>
+          <p className="muted rep-nota">Porcentaje de clientes que no llegaron. Ayuda a decidir en qué días y horas pedir garantía o confirmar por teléfono.</p>
+          <div className="rep-2">
+            <div><h4 className="lbl">Por día de la semana (%)</h4><Barras datos={r.faltaDia} destacar={2} /></div>
+            <div><h4 className="lbl">Por hora (%)</h4><Barras datos={r.faltaHora} destacar={2} etiqueta={(d) => d.k.slice(0, 2) + 'h'} /></div>
+          </div>
+        </div>
         <div className="card rep-grid__full"><h3 className="h3">Reservas por mes</h3>
           <Barras datos={r.meses} destacar={1} etiqueta={(d) => `${MESES[Number(d.k.slice(5)) - 1]} ${d.k.slice(2, 4)}`} />
         </div>

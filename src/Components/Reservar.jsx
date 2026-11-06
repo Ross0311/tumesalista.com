@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useSearchParams, useLocation, Link } from 'react-router-dom'
 import Calendario from './reserva/Calendario'
 import SelectorHorario from './reserva/SelectorHorario'
 import SelectorRestaurante from './reserva/SelectorRestaurante'
@@ -7,6 +7,9 @@ import MapaMesas from './reserva/MapaMesas'
 import { HORARIOS, getRestaurante } from '../data/restaurantes'
 import { hoyISO, formatoLargo, seSolapan } from '../utils/fechas'
 import { useDatos } from '../context/DatosContext'
+import { REGLAS, estadoDni, requiereGarantia } from '../utils/reglas'
+import Modal from './ui/Modal'
+import MensajeSimulado from './reserva/MensajeSimulado'
 
 const PASOS = ['Restaurante', 'Fecha y hora', 'Mesa', 'Tus datos']
 const VACIO = { dni: '', nombres: '', apellidos: '', celular: '', correo: '' }
@@ -19,11 +22,19 @@ const VALIDA = {
 }
 
 export default function Reservar() {
-  const { activas, crear, notificar } = useDatos()
+  const { reservas, activas, crear, cambiarEstado, notificar } = useDatos()
   const [params] = useSearchParams()
   const inicial = getRestaurante(params.get('r'))?.id ?? ''
   const [paso, setPaso] = useState(inicial ? 1 : 0)
-  const [hecha, setHecha] = useState(null)
+  const [hechaId, setHechaId] = useState(null)
+  const hecha = reservas.find((r) => r.id === hechaId) // se lee del estado global para reflejar la respuesta al mensaje
+  const [aviso, setAviso] = useState(false)
+  const [acepta, setAcepta] = useState(false)
+  const [yape, setYape] = useState('')
+  const cerrarAviso = useCallback(() => setAviso(false), [])
+  // Si el usuario vuelve a entrar a /reservar desde el menú, empieza una reserva nueva
+  const { key } = useLocation()
+  useEffect(() => { setHechaId(null) }, [key])
   const [form, setForm] = useState({ restauranteId: inicial, fecha: hoyISO(), hora: '', personas: 2, mesaId: null, ...VACIO })
   const [tocado, setTocado] = useState({})
   const [error, setError] = useState('')
@@ -61,16 +72,28 @@ export default function Reservar() {
   const errores = Object.fromEntries(Object.entries(VALIDA).map(([k, fn]) => [k, fn(form[k])]).filter(([, v]) => v !== true))
   const puedeSeguir = [form.restauranteId, form.fecha && form.hora, form.mesaId, !Object.keys(errores).length][paso]
 
+  // 1) Valida el formulario y abre el aviso emergente con las condiciones
   const enviar = (e) => {
     e.preventDefault()
     if (!puedeSeguir) { setTocado(Object.fromEntries(Object.keys(VALIDA).map((k) => [k, true]))); return }
-    const datos = { ...form, nombres: form.nombres.trim(), apellidos: form.apellidos.trim(), correo: form.correo.trim().toLowerCase() }
+    const bloqueo = estadoDni(form.dni, reservas)
+    if (bloqueo.bloqueado) { setError(`Este DNI tiene ${bloqueo.faltas} inasistencias recientes y no puede reservar hasta el ${bloqueo.hasta.split('-').reverse().join('/')}.`); return }
+    setError(''); setAcepta(false); setYape(''); setAviso(true)
+  }
+
+  // 2) Al aceptar el aviso se registra la reserva
+  const garantia = requiereGarantia(form.personas)
+  const puedeAceptar = acepta && (!garantia || /^\d{6,12}$/.test(yape))
+  const confirmar = () => {
+    const datos = { ...form, nombres: form.nombres.trim(), apellidos: form.apellidos.trim(), correo: form.correo.trim().toLowerCase(),
+      ...(garantia ? { garantia: { monto: REGLAS.MONTO_GARANTIA, operacion: yape } } : {}) }
     const r = crear(datos)
+    setAviso(false)
     if (!r.ok) { setError(r.error); if (r.error.includes('mesa')) setPaso(2); return }
-    setHecha(r.reserva)
+    setHechaId(r.reserva.id)
     window.scrollTo({ top: 0, behavior: 'smooth' })
     notificar(`¡Listo, ${r.reserva.nombres.split(' ')[0]}! Tu reserva fue registrada.`)
-    setForm((f) => ({ ...f, hora: '', mesaId: null })); setPaso(0); setError(''); setTocado({})
+    setForm((f) => ({ ...f, hora: '', mesaId: null })); setPaso(0); setTocado({})
   }
 
   const campo = (k, label, props = {}) => (
@@ -89,7 +112,7 @@ export default function Reservar() {
       <div className="card confirmacion fade">
         <span className="confirmacion__ok">✓</span>
         <h2 className="logo__script confirmacion__tit">¡Listo, {hecha.nombres.split(' ')[0]}!</h2>
-        <p className="h3">Tu mesa te estará esperando.</p>
+        <p className="h3">Tu reserva fue registrada.</p>
         <p className="muted">Enviamos el detalle a {hecha.correo}</p>
         <dl className="ticket">
           <div><dt>Restaurante</dt><dd>{rh.nombre}</dd></div>
@@ -98,10 +121,16 @@ export default function Reservar() {
           <div><dt>Mesa</dt><dd>Mesa {hecha.mesaId} — {rh.mesas.find((m) => m.id === hecha.mesaId)?.zona}</dd></div>
           <div><dt>Personas</dt><dd>{hecha.personas}</dd></div>
           <div><dt>A nombre de</dt><dd>{hecha.nombres} {hecha.apellidos} · DNI {hecha.dni}</dd></div>
+          <div><dt>Estado</dt><dd><span className={`badge badge--${hecha.estado}`}>{{ pendiente: 'Por reconfirmar', confirmada: 'Confirmada', cancelada: 'Cancelada' }[hecha.estado] ?? hecha.estado}</span></dd></div>
+          {hecha.garantia && <div><dt>Garantía</dt><dd>S/ {hecha.garantia.monto} por Yape · Op. {hecha.garantia.operacion}</dd></div>}
         </dl>
+        <div className="confirmacion__msg">
+          <p className="lbl">Así te llegará el recordatorio por WhatsApp y correo ({REGLAS.RECORDATORIO_HORAS} h antes). <span className="muted">Simulación: puedes responder aquí.</span></p>
+          <MensajeSimulado reserva={hecha} onResponder={(estado) => { cambiarEstado(hecha.id, estado); notificar(estado === 'confirmada' ? 'Asistencia confirmada.' : 'Reserva cancelada: la mesa quedó libre.') }} />
+        </div>
         <div className="confirmacion__acc">
-          <Link to={`/restaurantes/${rh.id}`} className="btn btn--ghost">Ver la carta</Link>
-          <button className="btn" onClick={() => setHecha(null)}>Hacer otra reserva</button>
+          <Link to="/mis-reservas" className="btn btn--ghost">Mis reservas</Link>
+          <button className="btn" onClick={() => setHechaId(null)}>Hacer otra reserva</button>
         </div>
       </div>
     )
@@ -189,10 +218,33 @@ export default function Reservar() {
       <div className="form__acciones">
         {paso > 0 && <button type="button" className="btn btn--ghost" onClick={() => setPaso(paso - 1)}>Atrás</button>}
         {paso < 3
-          ? <button type="button" className="btn" disabled={!puedeSeguir} onClick={() => setPaso(paso + 1)}>Continuar</button>
-          : <button type="submit" className="btn">Confirmar reserva</button>}
+          ? <button key="continuar" type="button" className="btn" disabled={!puedeSeguir} onClick={() => setPaso(paso + 1)}>Continuar</button>
+          : <button key="confirmar" type="submit" className="btn">Confirmar reserva</button>}
       </div>
     </form>
+
+    <Modal abierto={aviso} onCerrar={cerrarAviso} titulo="Antes de confirmar tu reserva"
+      acciones={<>
+        <button className="btn btn--ghost" onClick={cerrarAviso}>Volver</button>
+        <button className="btn" disabled={!puedeAceptar} onClick={confirmar}>Acepto y reservo</button>
+      </>}>
+      <ul className="politicas">
+        <li><span className="politicas__ico">📲</span><div><b>Te enviaremos un mensaje {REGLAS.RECORDATORIO_HORAS} horas antes</b> por WhatsApp al {form.celular} y a {form.correo} para que reconfirmes tu asistencia.</div></li>
+        <li><span className="politicas__ico">⚠️</span><div><b>Si no respondes</b>, tu reserva quedará como <i>sin respuesta</i> y el restaurante podrá liberar la mesa para otra persona.</div></li>
+        <li><span className="politicas__ico">⏱️</span><div><b>Tolerancia de {REGLAS.TOLERANCIA_MIN} minutos.</b> Pasado ese tiempo se registra como inasistencia y la mesa se libera.</div></li>
+        <li><span className="politicas__ico">🚫</span><div><b>{REGLAS.MAX_INASISTENCIAS} inasistencias</b> bloquean tu DNI por {REGLAS.DIAS_BLOQUEO} días. Si no puedes ir, cancela gratis desde <i>Mis reservas</i>.</div></li>
+      </ul>
+      {garantia && (
+        <div className="garantia">
+          <b>Grupo de {form.personas} personas: garantía de S/ {REGLAS.MONTO_GARANTIA}</b>
+          <p className="muted">Yapea al <b>{resto?.whatsapp}</b> ({resto?.nombre}). Se descuenta de tu cuenta; si no asistes, no se devuelve.</p>
+          <label className="lbl" htmlFor="yape">N.° de operación Yape</label>
+          <input id="yape" className="input" inputMode="numeric" maxLength={12} value={yape} onChange={(e) => setYape(e.target.value.replace(/\D/g, ''))} placeholder="Ej. 01234567" />
+          {yape && !/^\d{6,12}$/.test(yape) && <p className="hint">Entre 6 y 12 dígitos.</p>}
+        </div>
+      )}
+      <label className="check"><input type="checkbox" checked={acepta} onChange={(e) => setAcepta(e.target.checked)} /> Entiendo y acepto estas condiciones</label>
+    </Modal>
     </div>
   )
 }

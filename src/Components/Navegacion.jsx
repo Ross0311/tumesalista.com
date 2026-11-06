@@ -3,7 +3,7 @@ import { NavLink, Link, useLocation } from 'react-router-dom'
 import Logo from './ui/Logo'
 import { useDatos } from '../context/DatosContext'
 
-const ENLACES = [['/', 'Inicio'], ['/restaurantes', 'Restaurantes y cartas'], ['/servicios', 'Servicios'], ['/contacto', 'Contacto']]
+const ENLACES = [['/', 'Inicio'], ['/restaurantes', 'Restaurantes y cartas'], ['/servicios', 'Servicios'], ['/contacto', 'Contacto'], ['/mis-reservas', 'Mis reservas']]
 
 export default function Navegacion() {
   const [abierto, setAbierto] = useState(false)
